@@ -1,0 +1,1 @@
+Compile using older board definition and older RFID library.
