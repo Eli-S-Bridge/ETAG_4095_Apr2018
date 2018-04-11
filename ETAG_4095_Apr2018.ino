@@ -33,16 +33,8 @@
 #include <Wire.h>        //include the standard wire library - used for I2C communication with the clock
 #include <SD.h>          //include the standard SD card library
 #include <SPI.h>
-//#include "ManchesterDecoder.h"
 
-
-//#define pLED 13
-
-//#define EM4095
 #define Serial SerialUSB     //Designate the USB connection as the primary serial comm port
-//#define ShutdownPin 8
-//#define ShutdownPinB 8
-//#define demodOut 30
 #define DEMOD_OUT_PIN   30   //(PB03) this is the target pin for the raw RFID data
 #define SHD_PINA         8   //(PA06) Setting this pin high activates the primary RFID circuit (only one can be active at a time)
 #define SHD_PINB         9    //(PA07) Setting this pin high activates the seconday RFID circuit (only one can be active at a time)
@@ -262,7 +254,7 @@ void loop() {  //This is the main function. It loops (repeats) forever.
   stopMillis = currentMillis + polltime;   //next add the value of polltime to the current clock time to determine the desired stop time.
   while (stopMillis > millis()) {          //As long as the stoptime is less than the current millisecond counter, then keep looking for a tag
     if (L.scanForTag(tagData) == true) {   //If a tag gets read, then do all the following stuff (if not it will keep trying until the timer runs out)
-      Serial.print("RFID Tag Detected: "); //Print a message stating that a tag was found
+      //Serial.print("RFID Tag Detected: "); //Print a message stating that a tag was found
       getTime();                           //Call a subroutine function that reads the time from the clock
       displayTag();                        //Call a subroutine to display the tag data via serial USB
       flashLED();
@@ -278,11 +270,11 @@ void loop() {  //This is the main function. It loops (repeats) forever.
   digitalWrite(SHD_PINA, HIGH);    //Turn off both RFID circuits
   digitalWrite(SHD_PINB, HIGH);    //Turn off both RFID circuits
   delay(pausetime);               //pause between polling attempts
-      if (RFcircuit == 1)             //switch between active RF circuits.
-        {RFcircuit = 2;}              // comment out the if statement to use just 1 RFID circuit
-        else
-        {RFcircuit = 1;}
-  //RFcircuit = 1;              //This lines sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
+//      if (RFcircuit == 1)             //switch between active RF circuits.
+//        {RFcircuit = 2;}              // comment out the if statement to use just 1 RFID circuit
+//        else
+//        {RFcircuit = 1;}
+  RFcircuit = 1;              //This lines sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
 }// end void loop
 
 
@@ -452,11 +444,12 @@ void MakeTimeString() {
 
 
 void displayTag() {
+  Serial.print("Tag ");
   for (int n = 0; n < 5; n++) {             //loop to send tag data over serial comm one byte at a time
     if (tagData[n] < 10) Serial.print("0"); //send a leading zero if necessary (so "03" does not get shortened to "3")
     Serial.print(tagData[n], HEX);          //Send byte
   }
-  Serial.print(" on antenna ");  // add a note about which atenna was used
+  Serial.print(" detected on antenna ");  // add a note about which atenna was used
   Serial.print(RFcircuit);
   Serial.print(" at ");           // add the time the tag was logged and complete the data line
   Serial.println(timeString);
@@ -670,10 +663,10 @@ void writeFlashAddr(unsigned long fAddress) {           //write the address coun
 
 void writeFlashLine() {
   unsigned long fAddress = getFlashAddr(); //Get the current flash memory address
-  Serial.print("transferring to address: ");
-  Serial.print(fAddress, BIN);
-  Serial.print(" ");
-  displayTag();
+  //Serial.print("transferring to address: ");
+  //Serial.print(fAddress, BIN);
+  //Serial.print(" ");
+  //displayTag();
   digitalWrite(csFlash, LOW);   //activate flash chip
   SPI.transfer(0x58);           //opcode for read modify write
   SPI.transfer(fAddress >> 16);           // write most significant byte of Flash address
