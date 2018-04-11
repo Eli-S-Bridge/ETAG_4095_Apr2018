@@ -33,7 +33,16 @@
 #include <Wire.h>        //include the standard wire library - used for I2C communication with the clock
 #include <SD.h>          //include the standard SD card library
 #include <SPI.h>
+//#include "ManchesterDecoder.h"
+
+
+//#define pLED 13
+
+//#define EM4095
 #define Serial SerialUSB     //Designate the USB connection as the primary serial comm port
+//#define ShutdownPin 8
+//#define ShutdownPinB 8
+//#define demodOut 30
 #define DEMOD_OUT_PIN   30   //(PB03) this is the target pin for the raw RFID data
 #define SHD_PINA         8   //(PA06) Setting this pin high activates the primary RFID circuit (only one can be active at a time)
 #define SHD_PINB         9    //(PA07) Setting this pin high activates the seconday RFID circuit (only one can be active at a time)
@@ -96,9 +105,9 @@ void setup() {  // This function sets everything up for logging.
   digitalWrite(SDselect, HIGH);  //Make both chip selects high (not selected)
   digitalWrite(csFlash, HIGH);
   pinMode(SHD_PINA, OUTPUT);     // Make the primary RFID shutdown pin an output.
-  digitalWrite(SHD_PINA, LOW);   // turn the primary RFID circuit off (HIGH turns it on)
+  digitalWrite(SHD_PINA, HIGH);   // turn the primary RFID circuit off (LOW turns on the EM4095)
   pinMode(SHD_PINB, OUTPUT);
-  digitalWrite(SHD_PINA, LOW);   // turn the secondary RFID circuit off
+  digitalWrite(SHD_PINB, HIGH);   // turn the secondary RFID circuit off (LOW turns on the EM4095)
   pinMode(LED_RFID, OUTPUT);
   digitalWrite(LED_RFID, HIGH);  // turn the LED off (LOW turns it on)
 //  pinMode(MOTR, OUTPUT);
@@ -229,7 +238,6 @@ void setup() {  // This function sets everything up for logging.
 //  
 //  
 
-
   RFcircuit = 1;  //Indicates that the reader should start with the primary RFID circuit
 //  RFcircuit = 2;  //Indicates that the reader should start with the secondary RFID circuit  
   Serial.println("Scanning for tags...\n");   //message to user
@@ -267,14 +275,14 @@ void loop() {  //This is the main function. It loops (repeats) forever.
   } //end while
 
   //The following gets executed when the above while loop times out
-  digitalWrite(SHD_PINA, LOW);    //Turn off both RFID circuits
-  digitalWrite(SHD_PINB, LOW);    //Turn off both RFID circuits
+  digitalWrite(SHD_PINA, HIGH);    //Turn off both RFID circuits
+  digitalWrite(SHD_PINB, HIGH);    //Turn off both RFID circuits
   delay(pausetime);               //pause between polling attempts
-  //    if (RFcircuit == 1)             //switch between active RF circuits.
-  //      {RFcircuit = 2;}
-  //      else
-  //      {RFcircuit = 1;}
-  RFcircuit = 1;              //This lines sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
+      if (RFcircuit == 1)             //switch between active RF circuits.
+        {RFcircuit = 2;}              // comment out the if statement to use just 1 RFID circuit
+        else
+        {RFcircuit = 1;}
+  //RFcircuit = 1;              //This lines sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
 }// end void loop
 
 
