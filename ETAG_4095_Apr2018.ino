@@ -42,7 +42,7 @@
 #define READY_CLOCK_PIN  0    //not used - defined as zero
 #define SDselect         7    //Chip select for SD card - make this pin low to activate the SD card, also the clock interupt pin
 #define csFlash         2   //Chip select for flash memory
-#define LED_RFID        31    //Pin to control the LED indicator.  
+#define LED_RFID        31    //Pin to control the LED indicator.    
 //#define MOTR            13  //motor reverse
 //#define MOTF            11  //motor forward
 //#define mSwitch         12  //motor switch
@@ -241,10 +241,13 @@ void setup() {  // This function sets everything up for logging.
 //******************************MAIN PROGRAM*******************************
 
 void loop() {  //This is the main function. It loops (repeats) forever.
-  if (RFcircuit == 1)               //Determin which RFID circuit to activate
-    {digitalWrite(SHD_PINA, LOW);} //Turn on primary RFID circuit
-    else 
-    {digitalWrite(SHD_PINB, LOW);} //Turn on secondary RFID circuit
+  if (RFcircuit == 1) {             //Determin which RFID circuit to activate
+    digitalWrite(SHD_PINA, LOW); //Turn on primary RFID circuit
+    digitalWrite(SHD_PINB, HIGH); //Turn off secondary RFID circuit
+    } else {
+    digitalWrite(SHD_PINB, LOW); //Turn on secondary RFID circuit
+    digitalWrite(SHD_PINA, HIGH); //Turn off primary RFID circuit
+    } 
   
   Serial.print("Scanning RFID circuit "); //Tell the user which circuit is active
   Serial.println(RFcircuit);
@@ -270,11 +273,12 @@ void loop() {  //This is the main function. It loops (repeats) forever.
   digitalWrite(SHD_PINA, HIGH);    //Turn off both RFID circuits
   digitalWrite(SHD_PINB, HIGH);    //Turn off both RFID circuits
   delay(pausetime);               //pause between polling attempts
-//      if (RFcircuit == 1)             //switch between active RF circuits.
-//        {RFcircuit = 2;}              // comment out the if statement to use just 1 RFID circuit
-//        else
-//        {RFcircuit = 1;}
-  RFcircuit = 1;              //This lines sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
+      if (RFcircuit == 1) {           //switch between active RF circuits.
+        RFcircuit = 2;              // comment out the if statement to use just 1 RFID circuit
+      } else {
+        RFcircuit = 1;
+      } //end if
+  RFcircuit = 1;              //This line sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
 }// end void loop
 
 
