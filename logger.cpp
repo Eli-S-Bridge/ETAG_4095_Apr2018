@@ -183,7 +183,13 @@ bool logger::decodeTag(unsigned char *buf){
           timeOutFlag = 0;
           return false;
         } else {
-          return true;
+           for(j = 0; j < 50; j++){
+             if (buf[j] == 1) {
+               return true;
+               break;
+             }
+           }
+          return false;
         }
       }//end if(i==8)
       return false;
