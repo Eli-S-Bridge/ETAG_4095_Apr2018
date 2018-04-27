@@ -183,7 +183,7 @@ bool logger::decodeTag(unsigned char *buf){
           timeOutFlag = 0;
           return false;
         } else {
-           for(j = 0; j < 50; j++){
+           for(j = 0; j < 49; j++){
              if (buf[j] == 1) {
                return true;
                break;
@@ -244,6 +244,7 @@ bool logger::scanForTag(byte *tagData){
     return false;
   }
 }
+
 
 
 

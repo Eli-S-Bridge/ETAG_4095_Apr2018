@@ -56,6 +56,7 @@ byte tagData2[5];                  //Alternate variable array of 5 bytes for sto
 byte flashArray[528];              //Large array of 528 bytes for writing a full page to onboard flash memory 
 byte tagCount;                     //keeps track of number of stored tags
 byte byte0;                        //general purpose reusable variable
+byte byte1;                        //general purpose reusable variable
 long long0;                        //general purpose reusable variable
 unsigned int pageAddress;          //page address for flash memory
 unsigned int byteAddress;          //byte address for flash memory
@@ -257,15 +258,31 @@ void loop() {  //This is the main function. It loops (repeats) forever.
   stopMillis = currentMillis + polltime;   //next add the value of polltime to the current clock time to determine the desired stop time.
   while (stopMillis > millis()) {          //As long as the stoptime is less than the current millisecond counter, then keep looking for a tag
     if (L.scanForTag(tagData) == true) {   //If a tag gets read, then do all the following stuff (if not it will keep trying until the timer runs out)
-      //Serial.print("RFID Tag Detected: "); //Print a message stating that a tag was found
-      getTime();                           //Call a subroutine function that reads the time from the clock
-      displayTag();                        //Call a subroutine to display the tag data via serial USB
-      flashLED();
-      logSD();
-      writeFlashLine();  //function to log to backup memory
-      //match = checkTag();
-      //Serial.print("Match?: ");
-      //Serial.println(match, DEC);
+      byte1 = 0;
+      for(byte0 = 0; byte0 < 5; byte0++){
+//         Serial.print("byte ");
+//         Serial.print(byte0);
+//         Serial.print(" ");
+//         Serial.println(tagData[byte0]);
+         if (tagData[byte0] == 0) {
+               byte1 = 0;
+         } else {
+               byte1 = 1;
+               //Serial.println("got one");
+               break;
+         }
+       }
+      if(byte1 ==1) {  //do the following if the tag number if not a bunch of zeros 
+        //Serial.print("RFID Tag Detected: "); //Print a message stating that a tag was found
+        getTime();                           //Call a subroutine function that reads the time from the clock
+        displayTag();                        //Call a subroutine to display the tag data via serial USB
+        flashLED();
+        logSD();
+        writeFlashLine();  //function to log to backup memory
+        //match = checkTag();
+        //Serial.print("Match?: ");
+        //Serial.println(match, DEC);
+      } //do if not zeros
     } // end ScanForTag
   } //end while
 
@@ -280,6 +297,12 @@ void loop() {  //This is the main function. It loops (repeats) forever.
       } //end if
   RFcircuit = 1;              //This line sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
 }// end void loop
+
+
+
+
+
+
 
 
 //*********************SUBROUTINES*************************//
@@ -857,3 +880,4 @@ void writeByte() {                //for testing only
 //   
 //}
   
+
