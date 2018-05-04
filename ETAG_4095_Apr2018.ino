@@ -1,15 +1,12 @@
-//status: sleep not working. not entering sleep mode - need to copy stuff in word for word.
-
-
 /*
   Data logging sketch for the ETAG RFID Reader
-  Version 1. Distributed at AOS2017
-
+  Version 1.1 
   Code by:
    Alexander Moreno
    David Mitchell
    Eli Bridge
-   July-2017
+   Jay Wilhelm
+   May-2018
 
   Licenced in the public domain
 
@@ -25,16 +22,19 @@
   Page 2 is reserved for parameters and counters
   The rest is for backup memory.
 
+  Change log
+  5-4-18 - Added interrupt driven RFID reader (jaywilhelm)
 */
 
 //***********INITIALIZE INCLUDE FILES AND I/O PINS*******************
-#include "logger.h"      //include the library for reading and parsing raw RFID input
+//#include "logger.h"      //include the library for reading and parsing raw RFID input
+#include "ManchesterDecoder.h" //Interrupt driven RFID decoder
 #include "RTClib.h"
 #include <Wire.h>        //include the standard wire library - used for I2C communication with the clock
 #include <SD.h>          //include the standard SD card library
 #include <SPI.h>
 
-#define Serial SerialUSB     //Designate the USB connection as the primary serial comm port
+#define serial SerialUSB     //Designate the USB connection as the primary serial comm port
 #define DEMOD_OUT_PIN   30   //(PB03) this is the target pin for the raw RFID data
 #define SHD_PINA         8   //(PA06) Setting this pin high activates the primary RFID circuit (only one can be active at a time)
 #define SHD_PINB         9    //(PA07) Setting this pin high activates the seconday RFID circuit (only one can be active at a time)
@@ -42,21 +42,23 @@
 #define READY_CLOCK_PIN  0    //not used - defined as zero
 #define SDselect         7    //Chip select for SD card - make this pin low to activate the SD card, also the clock interupt pin
 #define csFlash         2   //Chip select for flash memory
-#define LED_RFID        31    //Pin to control the LED indicator.    
+#define LED_RFID        31    //Pin to control the LED indicator.  
 //#define MOTR            13  //motor reverse
 //#define MOTF            11  //motor forward
 //#define mSwitch         12  //motor switch
 
-logger L(DEMOD_OUT_PIN, MOD_PIN, READY_CLOCK_PIN); //Designate pins used in the logger library
+ManchesterDecoder gManDecoder1(DEMOD_OUT_PIN,SHD_PINA,ManchesterDecoder::EM4095);
+ManchesterDecoder gManDecoder2(DEMOD_OUT_PIN,SHD_PINB,ManchesterDecoder::EM4095);
+
+//logger L(DEMOD_OUT_PIN, MOD_PIN, READY_CLOCK_PIN); //Designate pins used in the logger library
 RTC_RV1805 rtc;
 
 //************************* initialize variables******************************
-byte tagData[5];                   //Variable array of 5 bytes for storing RFID tag codes
-byte tagData2[5];                  //Alternate variable array of 5 bytes for storing RFID tag codes
+//byte tagData[5];                   //Variable array of 5 bytes for storing RFID tag codes
+//byte tagData2[5];                  //Alternate variable array of 5 bytes for storing RFID tag codes
 byte flashArray[528];              //Large array of 528 bytes for writing a full page to onboard flash memory 
 byte tagCount;                     //keeps track of number of stored tags
 byte byte0;                        //general purpose reusable variable
-byte byte1;                        //general purpose reusable variable
 long long0;                        //general purpose reusable variable
 unsigned int pageAddress;          //page address for flash memory
 unsigned int byteAddress;          //byte address for flash memory
@@ -64,8 +66,8 @@ union flashMem {                   //Union variable for constructing instruction
   unsigned long flashAddress;
   byte flashAddrByte[4];
 };
-byte tagString;                   // ??
-byte tagString2;                  // ??
+//byte tagString;                   // ??
+//byte tagString2;                  // ??
 byte match;                       // used to determine if tags match.
 unsigned long currentMillis;      //Used for exploiting the millisecond counter for timing functions - stores a recent result of the millis() function
 unsigned long stopMillis;         //Used for exploiting the millisecond counter for timing functions - stores a less recent result of the millis() function
@@ -90,17 +92,25 @@ byte slpH = 22;                            //When to go to sleep at night - hour
 byte slpM = 00;                            //When to go to sleep at night - minute
 byte wakH = 06;                            //When to wake up in the morning - hour             
 byte wakM = 30;                            //When to wake up in the morning - minute   
-
+void getTime();
+byte readFlashByte(unsigned long fAddress);
+void writeFlashByte(unsigned long fAddress, byte fByte);
+unsigned long getFlashAddr();
+void writeFlashAddr(unsigned long fAddress);
+void setClk();
+void dumpMem();
 //*******************************SETUP**************************************
 void setup() {  // This function sets everything up for logging.
   pinMode(SDselect, OUTPUT);     // Chip select pin for SD card must be an output
   pinMode(csFlash, OUTPUT);      // Chip select pin for Flash memory
   digitalWrite(SDselect, HIGH);  //Make both chip selects high (not selected)
   digitalWrite(csFlash, HIGH);
-  pinMode(SHD_PINA, OUTPUT);     // Make the primary RFID shutdown pin an output.
-  digitalWrite(SHD_PINA, HIGH);   // turn the primary RFID circuit off (LOW turns on the EM4095)
-  pinMode(SHD_PINB, OUTPUT);
-  digitalWrite(SHD_PINB, HIGH);   // turn the secondary RFID circuit off (LOW turns on the EM4095)
+  gManDecoder1.DisableMonitoring();
+
+  //pinMode(SHD_PINA, OUTPUT);     // Make the primary RFID shutdown pin an output.
+  //digitalWrite(SHD_PINA, HIGH);   // turn the primary RFID circuit off (LOW turns on the EM4095)
+  //pinMode(SHD_PINB, OUTPUT);
+  //digitalWrite(SHD_PINB, HIGH);   // turn the secondary RFID circuit off (LOW turns on the EM4095)
   pinMode(LED_RFID, OUTPUT);
   digitalWrite(LED_RFID, HIGH);  // turn the LED off (LOW turns it on)
 //  pinMode(MOTR, OUTPUT);
@@ -112,9 +122,9 @@ void setup() {  // This function sets everything up for logging.
   rtc.begin();  // Is this needed? Seems to be necessary - could be made more efficient though
                    
   //Try to initiate a serial connection
-  Serial.begin(9600);               //Initiate a serial connection with the given baud rate
+  serial.begin(115200);               //Initiate a serial connection with the given baud rate
   ss = 0;                           //Initialize a variable for counting in the while loop that follows
-  while (ss < 5 && !Serial) {       //flash LED 5 times while waiting for serial connection to come online
+  while (ss < 5 && !serial) {       //flash LED 5 times while waiting for serial connection to come online
     delay(500);                     //pause for 0.5 seconds
     digitalWrite(LED_RFID, LOW);    //turn the LED on (LOW turns it on)
     delay(500);                     //pause again
@@ -124,14 +134,14 @@ void setup() {  // This function sets everything up for logging.
   digitalWrite(LED_RFID, HIGH);     // make sure LED is off
 
   getTime();                      //Read from the time registers 
-  Serial.println();
-  Serial.print("Clock set to ");  //message confirming clock time
-  Serial.println(timeString);
+  serial.println();
+  serial.print("Clock set to ");  //message confirming clock time
+  serial.println(timeString);
 
   //Set up the SD card
-  Serial.print("Initializing SD card...\n");              //message to user
+  serial.print("Initializing SD card...\n");              //message to user
   if (!SD.begin(SDselect)) {                            //Initiate the SD card function with the pin that activates the card.
-    Serial.println("\nSD card failed, or not present");   //SD card error message
+    serial.println("\nSD card failed, or not present");   //SD card error message
     //return;
   }// end check SD
   digitalWrite(SDselect, HIGH); //Make sure SD card is turned off
@@ -141,46 +151,46 @@ void setup() {  // This function sets everything up for logging.
   //transferTags();  //Transfer tag data to Flash memory
   //  flashArray[0] = 0;
   //  readByte();
-  // Serial.print("Number of tags transferred: ");
-  // Serial.println(tagCount, DEC);
+  // serial.print("Number of tags transferred: ");
+  // serial.println(tagCount, DEC);
 
-  Serial.print("check Flash Memory initialized: ");
+  serial.print("check Flash Memory initialized: ");
   byte0 = readFlashByte(0x00000404);
-  Serial.println(byte0, HEX);
+  serial.println(byte0, HEX);
   if (byte0 == 0xFF) {
     writeFlashByte(0x00000404, 0xAA);
     byte0 = 0xCC;
-    Serial.print("Initializing Flash Memory: ");
+    serial.print("Initializing Flash Memory: ");
     writeFlashAddr(0x00000800); //initialize flash memory to page 2, byte address 0
     byte0 = readFlashByte(0x00000404);
-    Serial.println(byte0, HEX);
+    serial.println(byte0, HEX);
   }
-  Serial.println("Flash Memory IS initialized: ");
-  Serial.print("Current flash address (binary no leading zeros): ");
-  Serial.println(getFlashAddr(), BIN);
+  serial.println("Flash Memory IS initialized: ");
+  serial.print("Current flash address (binary no leading zeros): ");
+  serial.println(getFlashAddr(), BIN);
   //writeFlashByte(0x00000404, 0xFF);   #Uncomment to set flash memory initialization flag to 0xFF, which will cause the memory address to be reset on startup
 
-//  Serial.print("Current feed mode: ");
-//  Serial.println(feedMode);
+//  serial.print("Current feed mode: ");
+//  serial.println(feedMode);
 
   menu = 1;
   while (menu == 1) {
-    Serial.println();
-    Serial.println("What to do?");             //Ask the user for instruction
-    Serial.println("    C = set clock");             
-    Serial.println("    B = Display backup memory");
-//    Serial.println("    O = set feeder mode to 'OPEN'");
-//    Serial.println("    A = set feeder mode to 'ALL TAGGED'");
-//    Serial.println("    T = set feeder mode to 'TARGETED'");
-//    Serial.println("    M = test and adjust motor");  
-    Serial.println("    Anything else = start logging");           
+    serial.println();
+    serial.println("What to do?");             //Ask the user for instruction
+    serial.println("    C = set clock");             
+    serial.println("    B = Display backup memory");
+//    serial.println("    O = set feeder mode to 'OPEN'");
+//    serial.println("    A = set feeder mode to 'ALL TAGGED'");
+//    serial.println("    T = set feeder mode to 'TARGETED'");
+//    serial.println("    M = test and adjust motor");  
+    serial.println("    Anything else = start logging");           
     serDelay = 0;                                      //If there's no response then just start logging
-    while (Serial.available() == 0 && serDelay < 10000) { //wait about 10 seconds for a user response
+    while (serial.available() == 0 && serDelay < 10000) { //wait about 10 seconds for a user response
       delay(1);
       serDelay++;
     }
-    if (Serial.available()) {          //If there is a response then perform the corresponding operation
-      incomingByte = Serial.read();
+    if (serial.available()) {          //If there is a response then perform the corresponding operation
+      incomingByte = serial.read();
       switch(incomingByte) {
       case 'C': {        //set clock
         setClk();  
@@ -204,8 +214,8 @@ void setup() {  // This function sets everything up for logging.
   }
   
 //  getTime();
-//  Serial.println("time is: "); 
-//  Serial.println(timeString);
+//  serial.println("time is: "); 
+//  serial.println(timeString);
 //  wakH = bcdToDec(hh);
 //  wakM = bcdToDec(mm)+1;
 //  setAlarm();
@@ -216,24 +226,24 @@ void setup() {  // This function sets everything up for logging.
 //  SLEEP_FLAG = true;
 //  pinMode(SDselect, INPUT);     // Chip select pin for SD card must be an output
 //
-//  Serial.print("TESTING SLEEP FUNCTION. SLEEP FLAG IS: ");
-//  Serial.println(SLEEP_FLAG);
+//  serial.print("TESTING SLEEP FUNCTION. SLEEP FLAG IS: ");
+//  serial.println(SLEEP_FLAG);
 //  if (SLEEP_FLAG == true) {
-//      Serial.println("I'm going to sleep now.");
+//      serial.println("I'm going to sleep now.");
 //      __WFI();  // wake from interrupt
 //     SLEEP_FLAG = false;
-//     Serial.println("Ok, I'm awake");
-//     Serial.println();
+//     serial.println("Ok, I'm awake");
+//     serial.println();
 //  }
 // 
 //
-//  Serial.println("AWAKE!"); 
+//  serial.println("AWAKE!"); 
 //  
 //  
 
   RFcircuit = 1;  //Indicates that the reader should start with the primary RFID circuit
 //  RFcircuit = 2;  //Indicates that the reader should start with the secondary RFID circuit  
-  Serial.println("Scanning for tags...\n");   //message to user
+  serial.println("Scanning for tags...\n");   //message to user
 } // end setup
 
 
@@ -242,67 +252,68 @@ void setup() {  // This function sets everything up for logging.
 //******************************MAIN PROGRAM*******************************
 
 void loop() {  //This is the main function. It loops (repeats) forever.
-  if (RFcircuit == 1) {             //Determin which RFID circuit to activate
-    digitalWrite(SHD_PINA, LOW); //Turn on primary RFID circuit
-    digitalWrite(SHD_PINB, HIGH); //Turn off secondary RFID circuit
-    } else {
-    digitalWrite(SHD_PINB, LOW); //Turn on secondary RFID circuit
-    digitalWrite(SHD_PINA, HIGH); //Turn off primary RFID circuit
-    } 
+  if (RFcircuit == 1)               //Determin which RFID circuit to activate
+    {digitalWrite(SHD_PINA, LOW);} //Turn on primary RFID circuit
+    else 
+    {digitalWrite(SHD_PINB, LOW);} //Turn on secondary RFID circuit
   
-  Serial.print("Scanning RFID circuit "); //Tell the user which circuit is active
-  Serial.println(RFcircuit);
+  serial.print("Scanning RFID circuit "); //Tell the user which circuit is active
+  serial.println(RFcircuit);
 
   //scan for a tag - if a tag is sucesfully scanned, return a 'true' and proceed
   currentMillis = millis();                //To determine how long to poll for tags, first get the current value of the built in millisecond clock on the processor
   stopMillis = currentMillis + polltime;   //next add the value of polltime to the current clock time to determine the desired stop time.
   while (stopMillis > millis()) {          //As long as the stoptime is less than the current millisecond counter, then keep looking for a tag
-    if (L.scanForTag(tagData) == true) {   //If a tag gets read, then do all the following stuff (if not it will keep trying until the timer runs out)
-      byte1 = 0;
-      for(byte0 = 0; byte0 < 5; byte0++){
-//         Serial.print("byte ");
-//         Serial.print(byte0);
-//         Serial.print(" ");
-//         Serial.println(tagData[byte0]);
-         if (tagData[byte0] == 0) {
-               byte1 = 0;
-         } else {
-               byte1 = 1;
-               //Serial.println("got one");
-               break;
-         }
-       }
-      if(byte1 ==1) {  //do the following if the tag number if not a bunch of zeros 
-        //Serial.print("RFID Tag Detected: "); //Print a message stating that a tag was found
-        getTime();                           //Call a subroutine function that reads the time from the clock
-        displayTag();                        //Call a subroutine to display the tag data via serial USB
-        flashLED();
-        logSD();
-        writeFlashLine();  //function to log to backup memory
-        //match = checkTag();
-        //Serial.print("Match?: ");
-        //Serial.println(match, DEC);
-      } //do if not zeros
+    EM4100Data xd; //special structure for our data
+    //alternative is to turn on decoding, wait, then check for tags....
+    if(gManDecoder1.DecodeAvailableData(&xd) > 0)
+    {   
+      //serial.print("RFID Tag Detected: "); //Print a message stating that a tag was found 
+      getTime();                           //Call a subroutine function that reads the time from the clock
+      displayTag(&xd);                        //Call a subroutine to display the tag data via serial USB
+      flashLED();
+      logRFID_To_SD(&xd);
+      writeRFID_To_FlashLine(&xd);  //function to log to backup memory
+      //match = checkTag();
+      //serial.print("Match?: ");
+      //serial.println(match, DEC);
     } // end ScanForTag
+    else
+    {
+      gManDecoder1.EnableMonitoring();//Let the data collection run in the background
+    }
+    if(gManDecoder2.DecodeAvailableData(&xd) > 0)
+    {   
+      //serial.print("RFID 2 Tag Detected: "); //Print a message stating that a tag was found 
+      getTime();                           //Call a subroutine function that reads the time from the clock
+      displayTag(&xd);                        //Call a subroutine to display the tag data via serial USB
+      flashLED();
+      logRFID_To_SD(&xd);
+      writeRFID_To_FlashLine(&xd);  //function to log to backup memory
+      //match = checkTag();
+      //serial.print("Match?: ");
+      //serial.println(match, DEC);
+    } // end ScanForTag
+    else
+    {
+      gManDecoder2.EnableMonitoring();//Let the data collection run in the background
+    }
   } //end while
 
   //The following gets executed when the above while loop times out
-  digitalWrite(SHD_PINA, HIGH);    //Turn off both RFID circuits
-  digitalWrite(SHD_PINB, HIGH);    //Turn off both RFID circuits
+  //gManDecoder1.DisableMonitoring();
+
+  
+  
+  //digitalWrite(SHD_PINA, HIGH);    //Turn off both RFID circuits
+  //digitalWrite(SHD_PINB, HIGH);    //Turn off both RFID circuits
   delay(pausetime);               //pause between polling attempts
-      if (RFcircuit == 1) {           //switch between active RF circuits.
-        RFcircuit = 2;              // comment out the if statement to use just 1 RFID circuit
-      } else {
-        RFcircuit = 1;
-      } //end if
-  RFcircuit = 1;              //This line sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
+//      if (RFcircuit == 1)             //switch between active RF circuits.
+//        {RFcircuit = 2;}              // comment out the if statement to use just 1 RFID circuit
+//        else
+//        {RFcircuit = 1;}
+  RFcircuit = 1;              //This lines sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
 }// end void loop
-
-
-
-
-
-
 
 
 //*********************SUBROUTINES*************************//
@@ -317,12 +328,12 @@ byte decToBcd( byte val ) {  // Convert decimal to binary coded decimals for wri
   return (byte) ((val / 10 * 16) + (val % 10));
 }
 
-static uint8_t conv2d(const char* p) { // Convert parts of a string to decimal numbers (not used in this version)
+/*static uint8_t conv2d(const char* p) { // Convert parts of a string to decimal numbers (not used in this version)
   uint8_t v = 0;
   if ('0' <= *p && *p <= '9')
     v = *p - '0';
   return 10 * v + *++p - '0';
-}
+}*/
 
 void initclk() {                //Start the clock running if it is not already
   Wire.begin();                  //Start up the I2C comm funcitons
@@ -333,14 +344,14 @@ void initclk() {                //Start the clock running if it is not already
 }
 
 //void setClk() {                          //Function to set the clock
-//  Serial.println("Enter mmddyyhhmmss");  //Ask for user input
-//  while (Serial.available() == 0) {}    //wait for 12 characters to accumulate
+//  serial.println("Enter mmddyyhhmmss");  //Ask for user input
+//  while (serial.available() == 0) {}    //wait for 12 characters to accumulate
 //  for (int n = 0; n < 13; n++) {        //loop to read all the data from the serial buffer once it is ready
-//    timeIn[n] = Serial.read();         //Read the characters from the buffer into an array of 12 bytes one at a time
+//    timeIn[n] = serial.read();         //Read the characters from the buffer into an array of 12 bytes one at a time
 //  }
-//  while (Serial.available())           //Clear the buffer, in case there were extra characters
+//  while (serial.available())           //Clear the buffer, in case there were extra characters
 //  {
-//    Serial.read();
+//    serial.read();
 //  }
 //
 //  mo = ((timeIn[0] - 48) * 10 + (timeIn[1] - 48)); //Convert two ascii characters into a single decimal number
@@ -365,20 +376,20 @@ void initclk() {                //Start the clock running if it is not already
 //  Wire.endTransmission();
 //  delay(10);
 //  getTime();                      //Read from the time registers you just set
-//  Serial.print("Clock set to ");  //message confirming clock time
-//  Serial.println(timeString);
+//  serial.print("Clock set to ");  //message confirming clock time
+//  serial.println(timeString);
 //
-//  //When the clock is set (more specifically when Serial.read is used) the RFID circuit fails)
+//  //When the clock is set (more specifically when serial.read is used) the RFID circuit fails)
 //  //I don't know why this happens
 //  //Only solution seems to be to restart the device.
 //  //So the following messages inform the user to restart the device.
-//  Serial.print("Restart reader to log data.");
+//  serial.print("Restart reader to log data.");
 //  while (1) {}                                   //Endless while loop. Program ends here. User must restart.
 //}
 
 
 void setAlarm() {  //Set alarm registers
-  Serial.println("setting alarm....");
+  serial.println("setting alarm....");
   writeI2C(0x68, 0x0E, 0); //write to register 0x0E (alarm seconds) - Do this first because you cannot leave the counter sitting at this register
   delay(10);
   writeI2C(0x68, 0x0A, B10010001);  //write to register 0x0A (Alarm Month) - Bits 7-4 must be 1001 to enable the alarm, bits 3-0 designate the month value, but this does not matter for an alarm repeated daily
@@ -392,7 +403,7 @@ void setAlarm() {  //Set alarm registers
 
 
 
-//  Serial.println("setting alarm....");
+//  serial.println("setting alarm....");
 //  Wire.begin();                 //Start I2C functions
 //  Wire.beginTransmission(0x68); //Begin I2C communication using the I2C address for the clock
 //  Wire.write(0xA0);             //set to starting register - register h0A: Alarm Month
@@ -429,18 +440,29 @@ void showClock() {
   if (Wire.available()) {
     for (int i=0; i <= 20; i++){
       byte0 = Wire.read(); //read
-      Serial.print("Clock register ");
-      Serial.print(i, HEX);
-      Serial.print(" ");
-      Serial.print(bcdToDec(byte0), DEC);
-      Serial.print(" ");
-      Serial.println(byte0, BIN);
+      serial.print("Clock register ");
+      serial.print(i, HEX);
+      serial.print(" ");
+      serial.print(bcdToDec(byte0), DEC);
+      serial.print(" ");
+      serial.println(byte0, BIN);
     }
   }
   Wire.endTransmission();
 }
 
-
+void getTime() {  //Read in the time from the clock registers
+  DateTime now = rtc.now();
+  ss = now.second(); //second
+  mm = now.minute(); //minute
+  hh = now.hour(); //hour
+  da = now.month(); //day of month
+  mo = now.month(); //month
+  yr = now.year(); //year
+  timeString = String(now.month()) + "/" + String(now.day()) + "/" +
+               String(now.year()) + " " + String(now.hour()) + ":" + 
+               String(now.minute()) + ":" + String(now.second()); 
+}
 //void getTime() {  //Read in the time from the clock registers
 //  Wire.beginTransmission(0x68);  //I2C address for the clock
 //  Wire.write(0x01);              //start to read from register 1 (seconds)
@@ -470,16 +492,28 @@ void MakeTimeString() {
 }
 
 
-void displayTag() {
-  Serial.print("Tag ");
+void displayTag(EM4100Data *xd) {
+  /*serial.print("Tag ");
   for (int n = 0; n < 5; n++) {             //loop to send tag data over serial comm one byte at a time
-    if (tagData[n] < 10) Serial.print("0"); //send a leading zero if necessary (so "03" does not get shortened to "3")
-    Serial.print(tagData[n], HEX);          //Send byte
-  }
-  Serial.print(" detected on antenna ");  // add a note about which atenna was used
-  Serial.print(RFcircuit);
-  Serial.print(" at ");           // add the time the tag was logged and complete the data line
-  Serial.println(timeString);
+    if (tagData[n] < 10) serial.print("0"); //send a leading zero if necessary (so "03" does not get shortened to "3")
+    serial.print(tagData[n], HEX);          //Send byte
+  }*/
+
+  serial.println();
+  
+  char tbuf[32];
+  serial.print("Card Number (hex): ");
+  ManchesterDecoder::GetHexString(xd,tbuf,sizeof(tbuf));
+  serial.println(tbuf);
+  
+  uint32_t cardNum = ManchesterDecoder::ConvertEM4100DataToNumber(xd);
+  serial.print("Card Number (dec): ");
+  serial.println(cardNum);
+    
+  serial.print(" detected on antenna ");  // add a note about which atenna was used
+  serial.print(RFcircuit);
+  serial.print(" at ");           // add the time the tag was logged and complete the data line
+  serial.println(timeString);
 }
 
 void flashLED() {
@@ -491,26 +525,33 @@ void flashLED() {
   }
 }
 
-void logSD() {
+void logRFID_To_SD(EM4100Data *xd) {
   File dataFile = SD.open("datalog.txt", FILE_WRITE);        //Initialize the SD card and open the file "datalog.txt" or create it if it is not there.
   if (dataFile) {
-    for (int n = 0; n < 5; n++) {               //loop to print out the RFID code to the SD card
+    /*for (int n = 0; n < 5; n++) {               //loop to print out the RFID code to the SD card
       if (tagData[n] < 10) dataFile.print("0"); //add a leading zero if necessary
       dataFile.print(tagData[n], HEX);          //print to the SD card
-    }
+    }*/
+    char tbuf[48]; 
+    ManchesterDecoder::GetHexString(xd,tbuf,sizeof(tbuf));
+    
+    dataFile.print(tbuf);
     dataFile.print(",");                        //comma for data delineation
     dataFile.print(RFcircuit);                  //log which antenna was active
     dataFile.print(",");                        //comma for data delineation
     dataFile.println(timeString);               //log the time
     dataFile.close();                           //close the file
-    Serial.println("saved to SD card.");        //serial output message to user
+    serial.println("saved to SD card.");        //serial output message to user
   } // check dataFile is present
   else {
-    Serial.println("error opening datalog.txt");  //error message if the "datafile.txt" is not present or cannot be created
+    serial.println("error opening datalog.txt");  //error message if the "datafile.txt" is not present or cannot be created
   }// end check for file
 }
 
 byte checkTag() {
+  byte tagString;
+  char tagData[16];
+  char tagData2[16];
   File myfile = SD.open("TAGS.TXT");  // attempt to open the file with a list of tag numbers
   if (myfile) {                       // if the file is available, read the file
     while (myfile.available()) {
@@ -526,18 +567,19 @@ byte checkTag() {
           break;
         }
       if (match == 1) {  //they all matched
-        //Serial.println("Match found");
+        //serial.println("Match found");
         while (myfile.available()) myfile.read(); //read the rest of the buffer to clear it.
         myfile.close();
         return match;
       }
-      //Serial.print(tagString, HEX);
-      //Serial.println(tagString2, HEX);
-      //Serial.write(myfile.read());
+      //serial.print(tagString, HEX);
+      //serial.println(tagString2, HEX);
+      //serial.write(myfile.read());
     }
     myfile.close();
     return match;
   }
+  return 0;
   //else {backup plan in case SD card is down...Read tag files from eeprom? from Flash?}
 }
 
@@ -559,16 +601,16 @@ byte asciiToHex(byte x) {
 //  //  }
 //  //  else
 //  if (myfile) {                      // if the file is available, read the file
-//    Serial.println("File found");
+//    serial.println("File found");
 //    while (myfile.available()) {
 //      for (int n = 0; n < 5; n++) {             //loop to read tag data and send over serial comm one byte at a time
 //        tagString = asciiToHex(myfile.read());
 //        tagData2[n] = (tagString << 4) + asciiToHex(myfile.read());
-//        if (tagData2[n] < 10) Serial.print("0"); //add a leading zero if necessary
-//        Serial.print(tagData2[n], HEX);
-//        //Serial.print(" ");
+//        if (tagData2[n] < 10) serial.print("0"); //add a leading zero if necessary
+//        serial.print(tagData2[n], HEX);
+//        //serial.print(" ");
 //      }
-//      Serial.println();
+//      serial.println();
 //      myfile.read();          //Read in the line return but don't do anything with it.
 //      tagCount += 1;           //add 1 to tagCount
 //      //pageAddress = 0;
@@ -586,10 +628,10 @@ byte asciiToHex(byte x) {
 //      for (int n = 0; n < 5; n++) {
 //        SPI.transfer(tagData2[n]);
 //        //        //SPI.transfer(0x77);
-//        //        Serial.print(tagData2[n], HEX);
-//        //        Serial.print(" ");
+//        //        serial.print(tagData2[n], HEX);
+//        //        serial.print(" ");
 //      }
-//      //      Serial.println(byteAddress, DEC);
+//      //      serial.println(byteAddress, DEC);
 //      byteAddress += 5;
 //      digitalWrite(csFlash, HIGH); //deactivate flash chip - allow write to happen
 //      delay(20);
@@ -609,10 +651,11 @@ void erasePage0() {
 }
 
 void dumpMem() {
-  Serial.println("Transmitting data from backup memory.");
+  char tagData[16];
+  serial.println("Transmitting data from backup memory.");
   unsigned long fAddressEnd = getFlashAddr();   // get flash address
-  Serial.print("last flash memory address: ");
-  Serial.println(fAddressEnd, BIN);
+  serial.print("last flash memory address: ");
+  serial.println(fAddressEnd, BIN);
   unsigned long fAddress = 0x00000800;          // first address for stored data
   while (fAddress < fAddressEnd) {
     digitalWrite(csFlash, LOW);                   // activate flash chip
@@ -621,8 +664,8 @@ void dumpMem() {
     SPI.transfer((fAddress >> 8) & 0xFF);       // second address byte
     SPI.transfer(fAddress & 0xFF);              // third address byte
     while ((fAddress & 0x000003FF) < 500) {       // repeat while the byte address is less than 500
-      Serial.print("from flash memory address: ");
-      Serial.println(fAddress, BIN);
+      serial.print("from flash memory address: ");
+      serial.println(fAddress, BIN);
 //    tagData[0] = SPI.transfer(0);
 //    tagData[1] = SPI.transfer(0);
 //    tagData[2] = SPI.transfer(0);
@@ -630,8 +673,8 @@ void dumpMem() {
 //    tagData[4] = SPI.transfer(0);  
     for (int n = 0; n < 5; n++) {             // loop to read in an RFID code from the flash and send it out via serial comm
        tagData[n] = SPI.transfer(0);
-       if (tagData[n] < 10) Serial.print("0"); // add a leading zero if necessary
-       Serial.print(tagData[n], HEX);         // send out tag datum
+       if (tagData[n] < 10) serial.print("0"); // add a leading zero if necessary
+       serial.print(tagData[n], HEX);         // send out tag datum
        }
     RFcircuit = SPI.transfer(0);               // read which antenna was active
     mo = SPI.transfer(0);                      // read in date and time
@@ -641,19 +684,19 @@ void dumpMem() {
     mm = SPI.transfer(0);
     ss = SPI.transfer(0);
 //    for (int n = 0; n < 5; n++) {             // loop to read in an RFID code from the flash and send it out via serial comm
-//       if (tagData[n] < 10) Serial.print("0"); // add a leading zero if necessary
-//       Serial.print(tagData[n], HEX);         // send out tag datum
+//       if (tagData[n] < 10) serial.print("0"); // add a leading zero if necessary
+//       serial.print(tagData[n], HEX);         // send out tag datum
 //       }
-    Serial.print(",");                       // comma for delineation
-    Serial.print(RFcircuit);                  // which circuit
-    Serial.print(",");                        // comma for delineation
+    serial.print(",");                       // comma for delineation
+    serial.print(RFcircuit);                  // which circuit
+    serial.print(",");                        // comma for delineation
     MakeTimeString();                         // transform bcd time data into a string
-    Serial.println(timeString);               // send out date/time
+    serial.println(timeString);               // send out date/time
     fAddress = fAddress + 12;                 // update flash address
     if (fAddress >= fAddressEnd) break;       // break if we are at the end of the backup data stream
     }
     // When the byte address exceeds 500 the page address needs to be incremented
-    fAddress = fAddress = (fAddress & 0xFFFFC00) + 0x0400;   //set byte address to zero and add 1 to the page address
+    fAddress = (fAddress & 0xFFFFC00) + 0x0400;   //set byte address to zero and add 1 to the page address
     digitalWrite(csFlash, HIGH);              // turn off flash
     if (fAddress >= fAddressEnd) break;       // break if we are at the end of the backup data stream
     delay(10);                                 // wait a bit
@@ -688,20 +731,23 @@ void writeFlashAddr(unsigned long fAddress) {           //write the address coun
   delay(20);
 }
 
-void writeFlashLine() {
+void writeRFID_To_FlashLine(EM4100Data *xd) {
   unsigned long fAddress = getFlashAddr(); //Get the current flash memory address
-  //Serial.print("transferring to address: ");
-  //Serial.print(fAddress, BIN);
-  //Serial.print(" ");
+  //serial.print("transferring to address: ");
+  //serial.print(fAddress, BIN);
+  //serial.print(" ");
   //displayTag();
   digitalWrite(csFlash, LOW);   //activate flash chip
   SPI.transfer(0x58);           //opcode for read modify write
   SPI.transfer(fAddress >> 16);           // write most significant byte of Flash address
   SPI.transfer((fAddress >> 8) & 0xFF);   // second address byte
   SPI.transfer(fAddress & 0xFF);          // third address byte
-//  for (int n = 0; n < 5; n++) {             //loop to log the RFID code to the flash
-//    SPI.transfer(tagData[n]);
-//  }
+
+  for (int n = 0; n < 10; n+=2) {             //loop to log the RFID code to the flash
+    uint8_t data0 = (xd->lines[n].data_nibb << 4) | xd->lines[n+1].data_nibb;
+    SPI.transfer(data0);
+    //SPI.transfer(tagData[n]);
+  }
 //  SPI.transfer(tagData[0]);
 //  SPI.transfer(tagData[1]);
 //  SPI.transfer(tagData[2]);
@@ -731,7 +777,7 @@ void writeFlashLine() {
   //digitalWrite(csFlash, HIGH); //deactivate flash chip
   delay(20);
   writeFlashAddr(fAddress);  //Write the updated address to flash.
-  Serial.println("saved to flash.");        //serial output message to user
+  serial.println("saved to flash.");        //serial output message to user
 }
 
 
@@ -759,13 +805,13 @@ void writeFlashByte(unsigned long fAddress, byte fByte) {
 
 
 void setClk() {                          //Function to set the clock)
-  Serial.println("Enter mmddyyhhmmss");  //Ask for user input
-   while(Serial.available() == 0) {}     //wait for 12 characters to accumulate
+  serial.println("Enter mmddyyhhmmss");  //Ask for user input
+   while(serial.available() == 0) {}     //wait for 12 characters to accumulate
    for (int n = 0; n < 13; n++) {        //loop to read all the data from the serial buffer once it is ready
-      timeIn[n] = Serial.read();         //Read the characters from the buffer into an array of 12 bytes one at a time
+      timeIn[n] = serial.read();         //Read the characters from the buffer into an array of 12 bytes one at a time
    }
-   while(Serial.available())          //Clear the buffer, in case there were extra characters
-   {Serial.read();}                   //Read in the date and time data
+   while(serial.available())          //Clear the buffer, in case there were extra characters
+   {serial.read();}                   //Read in the date and time data
    //Transform the input into decimal numbers    
    mo = ((timeIn[0]-48)*10 + (timeIn[1]-48));    //Convert two ascii characters into a single decimal number
    da = ((timeIn[2]-48)*10 + (timeIn[3]-48));    //Convert two ascii characters into a single decimal number
@@ -779,34 +825,17 @@ void setClk() {                          //Function to set the clock)
    delay(1500);
 
   //Verify that the clock is set
-  Serial.print("Clock set to ");  //message confirming clock time
+  serial.print("Clock set to ");  //message confirming clock time
   getTime();                      //Read from the time registers you just set 
-  Serial.println(timeString);
+  serial.println(timeString);
 
-  //When the clock is set (more specifically when Serial.read is used) the RFID circuit fails)
+  //When the clock is set (more specifically when serial.read is used) the RFID circuit fails)
   //I don't know why this happens
   //Only solution seems to be to restart the device. 
   //So the following messages inform the user to restart the device.
-  Serial.print("Restart reader to log data."); 
+  serial.print("Restart reader to log data."); 
   while(1){}   //Endless while loop. Program ends here. User must restart.
 }
-
-void getTime() {  //Read in the time from the clock registers
-  DateTime now = rtc.now();
-  ss = now.second(); //second
-  mm = now.minute(); //minute
-  hh = now.hour(); //hour
-  da = now.month(); //day of month
-  mo = now.month(); //month
-  yr = now.year(); //year
-  timeString = String(now.month()) + "/" + String(now.day()) + "/" +
-               String(now.year()) + " " + String(now.hour()) + ":" + 
-               String(now.minute()) + ":" + String(now.second()); 
-}
-
-
-
-
 
 
 
@@ -849,7 +878,7 @@ void writeByte() {                //for testing only
 }
 
 //void motorOpen() {
-//   Serial.println("Open feeder...");
+//   serial.println("Open feeder...");
 //   if (digitalRead(mSwitch)) {
 //      motorClose();
 //   }
@@ -864,7 +893,7 @@ void writeByte() {                //for testing only
 //}
 //
 //void motorClose() {
-//   Serial.println("Close feeder...");
+//   serial.println("Close feeder...");
 //   while (digitalRead(mSwitch)) {
 //    digitalWrite(MOTF, HIGH);
 //    digitalWrite(MOTR, LOW);
@@ -880,4 +909,3 @@ void writeByte() {                //for testing only
 //   
 //}
   
-
