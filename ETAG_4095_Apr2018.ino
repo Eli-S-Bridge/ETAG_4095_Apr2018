@@ -124,7 +124,7 @@ void setup() {  // This function sets everything up for logging.
   //Try to initiate a serial connection
   serial.begin(115200);               //Initiate a serial connection with the given baud rate
   ss = 0;                           //Initialize a variable for counting in the while loop that follows
-  while (ss < 5 && !serial) {       //flash LED 5 times while waiting for serial connection to come online
+  while (ss < 8 && !serial) {       //flash LED 5 times while waiting for serial connection to come online
     delay(500);                     //pause for 0.5 seconds
     digitalWrite(LED_RFID, LOW);    //turn the LED on (LOW turns it on)
     delay(500);                     //pause again
@@ -245,8 +245,6 @@ void setup() {  // This function sets everything up for logging.
 //  RFcircuit = 2;  //Indicates that the reader should start with the secondary RFID circuit  
   serial.println("Scanning for tags...\n");   //message to user
 } // end setup
-
-
 
 
 //******************************MAIN PROGRAM*******************************
@@ -458,7 +456,7 @@ void getTime() {  //Read in the time from the clock registers
   ss = now.second(); //second
   mm = now.minute(); //minute
   hh = now.hour(); //hour
-  da = now.month(); //day of month
+  da = now.day(); //day of month
   mo = now.month(); //month
   yr = now.year(); //year
   timeString = String(now.month()) + "/" + String(now.day()) + "/" +
@@ -484,12 +482,18 @@ void getTime() {  //Read in the time from the clock registers
 //}
 
 void MakeTimeString() {
-  sss = ss < 10 ? "0" + String(bcdToDec(ss), DEC) : String(bcdToDec(ss), DEC); //These lines convert decimals to characters to build a
-  mms = mm < 10 ? "0" + String(bcdToDec(mm), DEC) : String(bcdToDec(mm), DEC); //string with the date and time
-  hhs = hh < 10 ? "0" + String(bcdToDec(hh), DEC) : String(bcdToDec(hh), DEC); //They use a shorthand if/then/else statement to add
-  das = da < 10 ? "0" + String(bcdToDec(da), DEC) : String(bcdToDec(da), DEC); //leading zeros if necessary
-  mos = mo < 10 ? "0" + String(bcdToDec(mo), DEC) : String(bcdToDec(mo), DEC);
-  yrs = yr < 10 ? "0" + String(bcdToDec(yr), DEC) : String(bcdToDec(yr), DEC);
+//  sss = ss < 10 ? "0" + String(bcdToDec(ss), DEC) : String(bcdToDec(ss), DEC); //These lines convert decimals to characters to build a
+//  mms = mm < 10 ? "0" + String(bcdToDec(mm), DEC) : String(bcdToDec(mm), DEC); //string with the date and time
+//  hhs = hh < 10 ? "0" + String(bcdToDec(hh), DEC) : String(bcdToDec(hh), DEC); //They use a shorthand if/then/else statement to add
+//  das = da < 10 ? "0" + String(bcdToDec(da), DEC) : String(bcdToDec(da), DEC); //leading zeros if necessary
+//  mos = mo < 10 ? "0" + String(bcdToDec(mo), DEC) : String(bcdToDec(mo), DEC);
+//  yrs = yr < 10 ? "0" + String(bcdToDec(yr), DEC) : String(bcdToDec(yr), DEC);
+  sss = ss < 10 ? "0" + String(ss, DEC) : String(ss, DEC); //These lines convert decimals to characters to build a
+  mms = mm < 10 ? "0" + String(mm, DEC) : String(mm, DEC); //string with the date and time
+  hhs = hh < 10 ? "0" + String(hh, DEC) : String(hh, DEC); //They use a shorthand if/then/else statement to add
+  das = da < 10 ? "0" + String(da, DEC) : String(da, DEC); //leading zeros if necessary
+  mos = mo < 10 ? "0" + String(mo, DEC) : String(mo, DEC);
+  yrs = yr < 10 ? "0" + String(yr, DEC) : String(yr, DEC);
   timeString = mos + "/" + das + "/" + yrs + " " + hhs + ":" + mms + ":" + sss; //Construct the date and time string
 }
 
@@ -744,27 +748,15 @@ void writeRFID_To_FlashLine(EM4100Data *xd) {
   SPI.transfer(fAddress >> 16);           // write most significant byte of Flash address
   SPI.transfer((fAddress >> 8) & 0xFF);   // second address byte
   SPI.transfer(fAddress & 0xFF);          // third address byte
-
   for (int n = 0; n < 10; n+=2) {             //loop to log the RFID code to the flash
     uint8_t data0 = (xd->lines[n].data_nibb << 4) | xd->lines[n+1].data_nibb;
     SPI.transfer(data0);
     //SPI.transfer(tagData[n]);
   }
-//  SPI.transfer(tagData[0]);
-//  SPI.transfer(tagData[1]);
-//  SPI.transfer(tagData[2]);
-//  SPI.transfer(tagData[3]);
-//  SPI.transfer(tagData[4]);
-  SPI.transfer(0x16);
-  SPI.transfer(0x18);
-  SPI.transfer(0x33);
-  SPI.transfer(0xAA);
-  SPI.transfer(0xBB);
-  
   SPI.transfer(RFcircuit);                  //log which antenna was active
   SPI.transfer(mo);
   SPI.transfer(da);
-  SPI.transfer(0xBB);
+  SPI.transfer(yr);
   SPI.transfer(hh);
   SPI.transfer(mm);
   SPI.transfer(ss);
