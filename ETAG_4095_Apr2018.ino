@@ -253,9 +253,11 @@ void setup() {  // This function sets everything up for logging.
 
 void loop() {  //This is the main function. It loops (repeats) forever.
   if (RFcircuit == 1)               //Determin which RFID circuit to activate
-    {digitalWrite(SHD_PINA, LOW);} //Turn on primary RFID circuit
+    {digitalWrite(SHD_PINA, LOW); //Turn on primary RFID circuit
+    digitalWrite(SHD_PINB, HIGH);} //Turn off Secondary RFID circuit
     else 
-    {digitalWrite(SHD_PINB, LOW);} //Turn on secondary RFID circuit
+    {digitalWrite(SHD_PINB, LOW);
+    digitalWrite(SHD_PINA, HIGH);} //Turn off primary RFID circuit
   
   serial.print("Scanning RFID circuit "); //Tell the user which circuit is active
   serial.println(RFcircuit);
@@ -308,11 +310,11 @@ void loop() {  //This is the main function. It loops (repeats) forever.
   //digitalWrite(SHD_PINA, HIGH);    //Turn off both RFID circuits
   //digitalWrite(SHD_PINB, HIGH);    //Turn off both RFID circuits
   delay(pausetime);               //pause between polling attempts
-//      if (RFcircuit == 1)             //switch between active RF circuits.
-//        {RFcircuit = 2;}              // comment out the if statement to use just 1 RFID circuit
-//        else
-//        {RFcircuit = 1;}
-  RFcircuit = 1;              //This lines sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
+      if (RFcircuit == 1)             //switch between active RF circuits.
+        {RFcircuit = 2;}              // comment out the if statement to use just 1 RFID circuit
+        else
+        {RFcircuit = 1;}
+  //RFcircuit = 1;              //This lines sets the active RF circuit to 1. comment out or delete to use both circuits. Uncomment if you just want to use the primary circuit.
 }// end void loop
 
 
