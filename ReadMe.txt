@@ -8,7 +8,7 @@ Clone the Github directory or just download the zip file from the repository. Wh
 
 Now the hard part. The customized circuit board needs a customized board definition for it to work with the Arduio software. The board definition indicates how the pins are numbered and what each pin can do (input/output, analog-to-digital conversion, external interrupt, etc). To install a new board definition you must do two things
 
-1a) Add the following board manager in the Arduino IDE (https://github.com/jaywilhelm/ArduinoCore-ETAGRFID/blob/master/package_ETAGRFID_index.json)
+1a) Add the following board manager in the Arduino IDE (https://raw.githubusercontent.com/jaywilhelm/ArduinoCore-ETAGRFID/master/package_ETAGRFID_index.json)
 
 OR 
 
