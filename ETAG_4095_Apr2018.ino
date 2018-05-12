@@ -11,7 +11,6 @@
   Licenced in the public domain
 
   REQUIREMENTS:
-  The files "logger.cpp" and "logger.h" must be in the same folder as this sketch file
   Power supply for the board should come from the USB cable or a 5V battery or DV power source.
   A 3.3V CR1025 coin battery should be installed on the back side of the board to maintain the date
       and time when the board is disconnected from a primary power source.
@@ -27,7 +26,6 @@
 */
 
 //***********INITIALIZE INCLUDE FILES AND I/O PINS*******************
-//#include "logger.h"      //include the library for reading and parsing raw RFID input
 #include "ManchesterDecoder.h" //Interrupt driven RFID decoder
 #include "RTClib.h"
 #include <Wire.h>        //include the standard wire library - used for I2C communication with the clock
@@ -50,7 +48,6 @@
 ManchesterDecoder gManDecoder1(DEMOD_OUT_PIN,SHD_PINA,ManchesterDecoder::EM4095);
 ManchesterDecoder gManDecoder2(DEMOD_OUT_PIN,SHD_PINB,ManchesterDecoder::EM4095);
 
-//logger L(DEMOD_OUT_PIN, MOD_PIN, READY_CLOCK_PIN); //Designate pins used in the logger library
 RTC_RV1805 rtc;
 
 //************************* initialize variables******************************
@@ -99,13 +96,15 @@ unsigned long getFlashAddr();
 void writeFlashAddr(unsigned long fAddress);
 void setClk();
 void dumpMem();
+void printDirectory(File dir,int numTabs);
 //*******************************SETUP**************************************
 void setup() {  // This function sets everything up for logging.
-  pinMode(SDselect, OUTPUT);     // Chip select pin for SD card must be an output
+  //pinMode(SDselect, OUTPUT);     // Chip select pin for SD card must be an output
   pinMode(csFlash, OUTPUT);      // Chip select pin for Flash memory
   digitalWrite(SDselect, HIGH);  //Make both chip selects high (not selected)
   digitalWrite(csFlash, HIGH);
   gManDecoder1.DisableMonitoring();
+  gManDecoder2.DisableMonitoring();
 
   //pinMode(SHD_PINA, OUTPUT);     // Make the primary RFID shutdown pin an output.
   //digitalWrite(SHD_PINA, HIGH);   // turn the primary RFID circuit off (LOW turns on the EM4095)
@@ -123,13 +122,15 @@ void setup() {  // This function sets everything up for logging.
                    
   //Try to initiate a serial connection
   serial.begin(115200);               //Initiate a serial connection with the given baud rate
-  ss = 0;                           //Initialize a variable for counting in the while loop that follows
-  while (ss < 8 && !serial) {       //flash LED 5 times while waiting for serial connection to come online
+  //ss = 0;                           //Initialize a variable for counting in the while loop that follows
+  //while (ss < 8 && !serial) {       //flash LED 5 times while waiting for serial connection to come online
+  for(int i=0;i<8 && !serial;i++)
+  {
     delay(500);                     //pause for 0.5 seconds
     digitalWrite(LED_RFID, LOW);    //turn the LED on (LOW turns it on)
     delay(500);                     //pause again
     digitalWrite(LED_RFID, HIGH);   //turn the LED off (HIGH turns it off)
-    ss = ss + 1;                    //add to counting variable
+    //ss = ss + 1;                    //add to counting variable
   }//end while
   digitalWrite(LED_RFID, HIGH);     // make sure LED is off
 
@@ -144,6 +145,12 @@ void setup() {  // This function sets everything up for logging.
     serial.println("\nSD card failed, or not present");   //SD card error message
     //return;
   }// end check SD
+  else
+  {
+      serial.println("SD Contents");
+      File root = SD.open("/");
+      printDirectory(root, 0);
+  }
   digitalWrite(SDselect, HIGH); //Make sure SD card is turned off
   
   //Set up communication with the flash memory
@@ -664,6 +671,12 @@ void dumpMem() {
   serial.println(fAddressEnd, BIN);
   unsigned long fAddress = 0x00000800;          // first address for stored data
   while (fAddress < fAddressEnd) {
+    if(serial.available())
+    {
+      serial.println("User exit");  
+      break;
+    }
+      
     digitalWrite(csFlash, LOW);                   // activate flash chip
     SPI.transfer(0x03);                           // opcode for low freq read
     SPI.transfer(fAddress >> 16);               // write most significant byte of Flash address
@@ -870,7 +883,29 @@ void writeByte() {                //for testing only
   SPI.transfer(0xE4);
   digitalWrite(csFlash, HIGH); //deactivate flash chip
 }
+void printDirectory(File dir, int numTabs) {
+  while (true) {
 
+    File entry =  dir.openNextFile();
+    if (! entry) {
+      // no more files
+      break;
+    }
+    for (uint8_t i = 0; i < numTabs; i++) {
+      serial.print('\t');
+    }
+    serial.print(entry.name());
+    if (entry.isDirectory()) {
+      serial.println("/");
+      printDirectory(entry, numTabs + 1);
+    } else {
+      // files have sizes, directories do not
+      serial.print("\t\t");
+      serial.println(entry.size(), DEC);
+    }
+    entry.close();
+  }
+}
 //void motorOpen() {
 //   serial.println("Open feeder...");
 //   if (digitalRead(mSwitch)) {
