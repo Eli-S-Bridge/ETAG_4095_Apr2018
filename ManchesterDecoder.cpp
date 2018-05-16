@@ -188,6 +188,11 @@ ManchesterDecoder::ManchesterDecoder(uint8_t demodPin,uint8_t shutdownPin,ChipTy
 int ManchesterDecoder::DisableMonitoring(void)
 {
   detachInterrupt(digitalPinToInterrupt(mPIN_demodout));
+  tDiffPinBuf[nBitRingBufLength];
+	dWriteIndex = 0;
+	dReadIndex = 0;
+	dDataCount = 0;
+	ResetMachine();
   return 0;
 }
 uint32_t ManchesterDecoder::ConvertEM4100DataToNumber(EM4100Data *xd)
