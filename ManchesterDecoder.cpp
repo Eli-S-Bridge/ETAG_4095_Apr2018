@@ -188,7 +188,7 @@ ManchesterDecoder::ManchesterDecoder(uint8_t demodPin,uint8_t shutdownPin,ChipTy
 int ManchesterDecoder::DisableMonitoring(void)
 {
   detachInterrupt(digitalPinToInterrupt(mPIN_demodout));
-  tDiffPinBuf[nBitRingBufLength];
+  memset((uint8_t*)tDiffPinBuf,0,nBitRingBufLength);
 	dWriteIndex = 0;
 	dReadIndex = 0;
 	dDataCount = 0;
