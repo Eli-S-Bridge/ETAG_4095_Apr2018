@@ -270,10 +270,12 @@ void loop() {  //This is the main function. It loops (repeats) forever.
   //scan for a tag - if a tag is sucesfully scanned, return a 'true' and proceed
   currentMillis = millis();                //To determine how long to poll for tags, first get the current value of the built in millisecond clock on the processor
   stopMillis = currentMillis + polltime;   //next add the value of polltime to the current clock time to determine the desired stop time.
-  while (stopMillis > millis()) {          //As long as the stoptime is less than the current millisecond counter, then keep looking for a tag
+  //while (stopMillis > millis()) {          //As long as the stoptime is less than the current millisecond counter, then keep looking for a tag
     EM4100Data xd; //special structure for our data
     //alternative is to turn on decoding, wait, then check for tags....
-    if(gManDecoder1.DecodeAvailableData(&xd) > 0)
+	gManDecoder1.EnableMonitoring();
+	delay(1000);
+	if(gManDecoder1.DecodeAvailableData(&xd) > 0)
     {   
       //serial.print("RFID Tag Detected: "); //Print a message stating that a tag was found 
       getTime();                           //Call a subroutine function that reads the time from the clock
@@ -285,10 +287,14 @@ void loop() {  //This is the main function. It loops (repeats) forever.
       //serial.print("Match?: ");
       //serial.println(match, DEC);
     } // end ScanForTag
-    else
-    {
-      gManDecoder1.EnableMonitoring();//Let the data collection run in the background
-    }
+    //else
+    //{
+    //  gManDecoder1.EnableMonitoring();//Let the data collection run in the background
+    //}
+	gManDecoder1.DisableMonitoring();
+	gManDecoder2.EnableMonitoring();
+	delay(1000);
+	
     if(gManDecoder2.DecodeAvailableData(&xd) > 0)
     {   
       //serial.print("RFID 2 Tag Detected: "); //Print a message stating that a tag was found 
@@ -301,11 +307,14 @@ void loop() {  //This is the main function. It loops (repeats) forever.
       //serial.print("Match?: ");
       //serial.println(match, DEC);
     } // end ScanForTag
-    else
-    {
-      gManDecoder2.EnableMonitoring();//Let the data collection run in the background
-    }
-  } //end while
+   	gManDecoder2.DisableMonitoring();
+
+	//else
+    //{
+    //  gManDecoder2.EnableMonitoring();//Let the data collection run in the background
+    //}
+	//gManDecoder2.DisableMonitoring();
+	//} //end while
 
   //The following gets executed when the above while loop times out
   //gManDecoder1.DisableMonitoring();
