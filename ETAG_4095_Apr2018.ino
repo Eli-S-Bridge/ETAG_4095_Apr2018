@@ -82,9 +82,11 @@ unsigned int mDelay2 = 0;
 volatile bool SLEEP_FLAG;
 
 //********************CONSTANTS (SET UP LOGGING PARAMETERS HERE!!)*******************************
-const unsigned int polltime = 3000;       //How long in milliseconds to poll for tags
-const unsigned int pausetime = 500;       //How long in milliseconds to wait between polling intervals
-const unsigned int readFreq = 200;        //How long to wait after a tag is successfully read.
+const unsigned int pollTime1 = 5000;       //How long in milliseconds to poll for tags on circuit 1
+const unsigned int pollTime2 = 1000;       //How long in milliseconds to poll for tags on circuit 2
+const unsigned int readInterval = 500;     //How often to try for repeated tag reads (milliseconds - should be at least 100, should not exceed pollTime)
+const unsigned int pauseTime = 500;        //How long in milliseconds to wait between polling intervals
+const unsigned int readFreq = 200;         //How long to wait after a tag is successfully read.
 byte slpH = 22;                            //When to go to sleep at night - hour
 byte slpM = 00;                            //When to go to sleep at night - minute
 byte wakH = 06;                            //When to wake up in the morning - hour             
@@ -257,73 +259,60 @@ void setup() {  // This function sets everything up for logging.
 //******************************MAIN PROGRAM*******************************
 
 void loop() {  //This is the main function. It loops (repeats) forever.
-  if (RFcircuit == 1)               //Determin which RFID circuit to activate
-    {digitalWrite(SHD_PINA, LOW); //Turn on primary RFID circuit
-    digitalWrite(SHD_PINB, HIGH);} //Turn off Secondary RFID circuit
-    else 
-    {digitalWrite(SHD_PINB, LOW);
-    digitalWrite(SHD_PINA, HIGH);} //Turn off primary RFID circuit
   
   serial.print("Scanning RFID circuit "); //Tell the user which circuit is active
   serial.println(RFcircuit);
 
-  //scan for a tag - if a tag is sucesfully scanned, return a 'true' and proceed
-  currentMillis = millis();                //To determine how long to poll for tags, first get the current value of the built in millisecond clock on the processor
-  stopMillis = currentMillis + polltime;   //next add the value of polltime to the current clock time to determine the desired stop time.
-  //while (stopMillis > millis()) {          //As long as the stoptime is less than the current millisecond counter, then keep looking for a tag
-    EM4100Data xd; //special structure for our data
-    //alternative is to turn on decoding, wait, then check for tags....
-	gManDecoder1.EnableMonitoring();
-	delay(1000);
-	if(gManDecoder1.DecodeAvailableData(&xd) > 0)
-    {   
-      //serial.print("RFID Tag Detected: "); //Print a message stating that a tag was found 
-      getTime();                           //Call a subroutine function that reads the time from the clock
-      displayTag(&xd);                        //Call a subroutine to display the tag data via serial USB
-      flashLED();
-      logRFID_To_SD(&xd);
-      writeRFID_To_FlashLine(&xd);  //function to log to backup memory
-      //match = checkTag();
-      //serial.print("Match?: ");
-      //serial.println(match, DEC);
-    } // end ScanForTag
-    //else
-    //{
-    //  gManDecoder1.EnableMonitoring();//Let the data collection run in the background
-    //}
-	gManDecoder1.DisableMonitoring();
-	gManDecoder2.EnableMonitoring();
-	delay(1000);
-	
-    if(gManDecoder2.DecodeAvailableData(&xd) > 0)
-    {   
-      //serial.print("RFID 2 Tag Detected: "); //Print a message stating that a tag was found 
-      getTime();                           //Call a subroutine function that reads the time from the clock
-      displayTag(&xd);                        //Call a subroutine to display the tag data via serial USB
-      flashLED();
-      logRFID_To_SD(&xd);
-      writeRFID_To_FlashLine(&xd);  //function to log to backup memory
-      //match = checkTag();
-      //serial.print("Match?: ");
-      //serial.println(match, DEC);
-    } // end ScanForTag
-   	gManDecoder2.DisableMonitoring();
+  EM4100Data xd; //special structure for our data
+ 
+  if (RFcircuit == 1)               //Determin which RFID circuit to activate
+    {digitalWrite(SHD_PINA, LOW); //Turn on primary RFID circuit
+    digitalWrite(SHD_PINB, HIGH); //Turn off Secondary RFID circuit
+      currentMillis = millis();                //To determine how long to poll for tags, first get the current value of the built in millisecond clock on the processor
+      stopMillis = currentMillis + pollTime1;   //next add the value of polltime to the current clock time to determine the desired stop time.
+      while (stopMillis > millis()) {          //As long as the stoptime is less than the current millisecond counter, then keep looking for a tag
+        gManDecoder1.EnableMonitoring();
+        delay(readInterval);
+        if(gManDecoder1.DecodeAvailableData(&xd) > 0)
+        {   
+        //serial.print("RFID 2 Tag Detected: "); //Print a message stating that a tag was found 
+        getTime();                           //Call a subroutine function that reads the time from the clock
+        displayTag(&xd);                        //Call a subroutine to display the tag data via serial USB
+        flashLED();
+        logRFID_To_SD(&xd);
+        writeRFID_To_FlashLine(&xd);  //function to log to backup memory
+        //match = checkTag();
+        //serial.print("Match?: ");
+        //serial.println(match, DEC);
+        } // end ScanForTag
+      }
+    gManDecoder1.DisableMonitoring();
+    }
+    else 
+    {digitalWrite(SHD_PINB, LOW); //Turn on secondary RFID circuit
+    digitalWrite(SHD_PINA, HIGH); //Turn off primary RFID circuit
+      currentMillis = millis();                //To determine how long to poll for tags, first get the current value of the built in millisecond clock on the processor
+      stopMillis = currentMillis + pollTime2;   //next add the value of polltime to the current clock time to determine the desired stop time.
+      while (stopMillis > millis()) {          //As long as the stoptime is less than the current millisecond counter, then keep looking for a tag
+        gManDecoder2.EnableMonitoring();
+        delay(readInterval);
+        if(gManDecoder2.DecodeAvailableData(&xd) > 0)
+        {   
+        //serial.print("RFID 2 Tag Detected: "); //Print a message stating that a tag was found 
+        getTime();                           //Call a subroutine function that reads the time from the clock
+        displayTag(&xd);                        //Call a subroutine to display the tag data via serial USB
+        flashLED();
+        logRFID_To_SD(&xd);
+        writeRFID_To_FlashLine(&xd);  //function to log to backup memory
+        //match = checkTag();
+        //serial.print("Match?: ");
+        //serial.println(match, DEC);
+        } // end ScanForTag
+      }
+    gManDecoder2.DisableMonitoring();
+    }
 
-	//else
-    //{
-    //  gManDecoder2.EnableMonitoring();//Let the data collection run in the background
-    //}
-	//gManDecoder2.DisableMonitoring();
-	//} //end while
-
-  //The following gets executed when the above while loop times out
-  //gManDecoder1.DisableMonitoring();
-
-  
-  
-  //digitalWrite(SHD_PINA, HIGH);    //Turn off both RFID circuits
-  //digitalWrite(SHD_PINB, HIGH);    //Turn off both RFID circuits
-  delay(pausetime);               //pause between polling attempts
+  //delay(pauseTime);               //pause between polling attempts
       if (RFcircuit == 1)             //switch between active RF circuits.
         {RFcircuit = 2;}              // comment out the if statement to use just 1 RFID circuit
         else
